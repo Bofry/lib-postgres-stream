@@ -39,3 +39,8 @@ func (m *Message) Bytes() []byte {
 func (m *Message) HasResponded() bool {
 	return atomic.LoadInt32(&m.responded) == 1
 }
+
+func (m *Message) Clone() *Message {
+	cloned := *m
+	return &cloned
+}
