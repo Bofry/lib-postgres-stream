@@ -19,6 +19,8 @@ type Consumer struct {
 	Logger         *log.Logger
 	Config         *Config
 
+	DisableAutoCommit bool
+
 	conn *pgconn.PgConn
 	wg   sync.WaitGroup
 
@@ -65,6 +67,21 @@ func (c *Consumer) init() {
 	}
 
 	c.initialized = true
+}
+
+func (c *Consumer) doAck(xLogPos pglogrepl.LSN) error {
+	if c.disposed {
+		return nil
+	}
+	if !c.running {
+		return nil
+	}
+
+	return pglogrepl.SendStandbyStatusUpdate(context.Background(),
+		c.conn,
+		pglogrepl.StandbyStatusUpdate{
+			WALWritePosition: xLogPos,
+		})
 }
 
 func (c *Consumer) subscribe(slot SlotOffset) error {
@@ -160,23 +177,13 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 
 		var (
 			timeout  = c.Config.PollingTimeout
-			deadline = time.Now().Add(timeout)
+			deadline time.Time
 
 			clientXLogPos pglogrepl.LSN
 		)
 
 		for c.running {
-			if time.Now().After(deadline) {
-				err = pglogrepl.SendStandbyStatusUpdate(context.Background(),
-					conn,
-					pglogrepl.StandbyStatusUpdate{
-						WALWritePosition: clientXLogPos,
-					})
-				if err != nil {
-					c.Logger.Println("SendStandbyStatusUpdate failed:", err)
-				}
-				deadline = time.Now().Add(timeout)
-			}
+			deadline = time.Now().Add(timeout)
 
 			msg, err := c.read(deadline)
 			if err != nil {
@@ -204,14 +211,22 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 					panic(err)
 				}
 
-				ev := PrimaryKeepaliveMessageEvent(pkm)
-				c.handleEvent(&ev)
-
+				// update clientXLogPos
 				if pkm.ServerWALEnd > clientXLogPos {
 					clientXLogPos = pkm.ServerWALEnd
 				}
-				if pkm.ReplyRequested {
-					deadline = time.Time{}
+				// if pkm.ReplyRequested {
+				// 	deadline = time.Time{}
+				// }
+
+				ev := PrimaryKeepaliveMessageEvent(pkm)
+				c.handleEvent(&ev)
+
+				// ack
+				if err = c.doAck(clientXLogPos); err != nil {
+					if !c.handleError(err) {
+						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.SlotName, clientXLogPos, err)
+					}
 				}
 			case pglogrepl.XLogDataByteID:
 				xld, err := pglogrepl.ParseXLogData(msg.Data[1:])
@@ -222,10 +237,15 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 					}
 				}
 
+				// update clientXLogPos
+				if xld.WALStart > clientXLogPos {
+					clientXLogPos = xld.WALStart
+				}
+
 				ev := XLogDataEvent(xld)
 				c.handleEvent(&ev)
 
-				err = c.handlerMessae(slot.SlotName, xld)
+				err = c.handlerMessae(slot.SlotName, clientXLogPos, xld)
 				if err != nil {
 					if !c.handleError(err) {
 						c.Logger.Fatalf("%% Error: %v\n", err)
@@ -233,8 +253,15 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 					}
 				}
 
-				if xld.WALStart > clientXLogPos {
-					clientXLogPos = xld.WALStart
+				if c.DisableAutoCommit {
+					continue
+				}
+
+				// ack
+				if err = c.doAck(clientXLogPos); err != nil {
+					if !c.handleError(err) {
+						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.SlotName, clientXLogPos, err)
+					}
 				}
 			default:
 				// do nothing
@@ -272,15 +299,16 @@ func (c *Consumer) handleEvent(event Event) {
 	}
 }
 
-func (c *Consumer) handlerMessae(slotName string, data pglogrepl.XLogData) error {
+func (c *Consumer) handlerMessae(slotName string, consumedXLogPos pglogrepl.LSN, data pglogrepl.XLogData) error {
 	if c.MessageHandler != nil {
 		c.wg.Add(1)
 		defer c.wg.Done()
 
 		msg := Message{
-			SlotName: slotName,
-			Delegate: nil,
-			data:     &data,
+			SlotName:        slotName,
+			Delegate:        &clientMessageDelegate{client: c},
+			consumedXLogPos: consumedXLogPos,
+			data:            &data,
 		}
 
 		return c.MessageHandler(&msg)

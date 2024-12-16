@@ -11,7 +11,8 @@ type Message struct {
 	SlotName string
 	Delegate MessageDelegate
 
-	data *pglogrepl.XLogData
+	consumedXLogPos pglogrepl.LSN
+	data            *pglogrepl.XLogData
 
 	responded int32
 }
