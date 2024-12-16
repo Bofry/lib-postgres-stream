@@ -19,7 +19,7 @@ type Consumer struct {
 	Logger         *log.Logger
 	Config         *Config
 
-	DisableAutoCommit bool
+	DisableAutoAck bool
 
 	conn *pgconn.PgConn
 	wg   sync.WaitGroup
@@ -253,7 +253,7 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 					}
 				}
 
-				if c.DisableAutoCommit {
+				if c.DisableAutoAck {
 					continue
 				}
 
