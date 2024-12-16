@@ -36,6 +36,10 @@ type (
 		ByteID() byte
 	}
 
+	SlotOffsetInfo interface {
+		getSlotOffset() SlotOffset
+	}
+
 	ReplicationOption interface {
 		applyStartReplicationOptions(opt *pglogrepl.StartReplicationOptions)
 	}

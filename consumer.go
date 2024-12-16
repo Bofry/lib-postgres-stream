@@ -28,7 +28,46 @@ type Consumer struct {
 	disposed    bool
 }
 
-func (c *Consumer) Subscribe(slot SlotOffset, opts ...ReplicationOption) error {
+func (c *Consumer) Subscribe(slot SlotOffsetInfo, opts ...ReplicationOption) error {
+	return c.subscribe(slot.getSlotOffset(), opts...)
+}
+
+func (c *Consumer) Close() {
+	if c.disposed {
+		return
+	}
+
+	c.mutex.Lock()
+	c.running = false
+
+	defer func() {
+		c.disposed = true
+		// dispose
+		c.mutex.Unlock()
+	}()
+
+	c.wg.Wait()
+
+	c.conn.Close(context.Background())
+}
+
+func (c *Consumer) init() {
+	if c.initialized {
+		return
+	}
+
+	if c.Config == nil {
+		c.Config = NewConfig()
+	}
+
+	if c.Logger == nil {
+		c.Logger = defaultLogger
+	}
+
+	c.initialized = true
+}
+
+func (c *Consumer) subscribe(slot SlotOffset, opts ...ReplicationOption) error {
 	if c.disposed {
 		return fmt.Errorf("the Consumer has been disposed")
 	}
@@ -62,7 +101,8 @@ func (c *Consumer) Subscribe(slot SlotOffset, opts ...ReplicationOption) error {
 	var (
 		sysident pglogrepl.IdentifySystemResult
 		startLSN pglogrepl.LSN
-		conn     = c.conn
+
+		conn = c.conn
 	)
 	{
 		sysident, err = pglogrepl.IdentifySystem(context.Background(), conn)
@@ -205,25 +245,6 @@ func (c *Consumer) Subscribe(slot SlotOffset, opts ...ReplicationOption) error {
 	return nil
 }
 
-func (c *Consumer) Close() {
-	if c.disposed {
-		return
-	}
-
-	c.mutex.Lock()
-	c.running = false
-
-	defer func() {
-		c.disposed = true
-		// dispose
-		c.mutex.Unlock()
-	}()
-
-	c.wg.Wait()
-
-	c.conn.Close(context.Background())
-}
-
 func (c *Consumer) read(deadline time.Time) (*pgproto3.CopyData, error) {
 	var (
 		conn = c.conn
@@ -243,22 +264,6 @@ func (c *Consumer) read(deadline time.Time) (*pgproto3.CopyData, error) {
 		return nil, nil
 	}
 	return msg, nil
-}
-
-func (c *Consumer) init() {
-	if c.initialized {
-		return
-	}
-
-	if c.Config == nil {
-		c.Config = NewConfig()
-	}
-
-	if c.Logger == nil {
-		c.Logger = defaultLogger
-	}
-
-	c.initialized = true
 }
 
 func (c *Consumer) handleEvent(event Event) {
