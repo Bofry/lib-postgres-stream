@@ -28,8 +28,8 @@ type Consumer struct {
 	disposed    bool
 }
 
-func (c *Consumer) Subscribe(slot SlotOffsetInfo, opts ...ReplicationOption) error {
-	return c.subscribe(slot.getSlotOffset(), opts...)
+func (c *Consumer) Subscribe(slot SlotOffsetInfo) error {
+	return c.subscribe(slot.getSlotOffset())
 }
 
 func (c *Consumer) Close() {
@@ -67,7 +67,7 @@ func (c *Consumer) init() {
 	c.initialized = true
 }
 
-func (c *Consumer) subscribe(slot SlotOffset, opts ...ReplicationOption) error {
+func (c *Consumer) subscribe(slot SlotOffset) error {
 	if c.disposed {
 		return fmt.Errorf("the Consumer has been disposed")
 	}
@@ -142,7 +142,7 @@ func (c *Consumer) subscribe(slot SlotOffset, opts ...ReplicationOption) error {
 	}
 
 	var options = pglogrepl.StartReplicationOptions{}
-	for _, opt := range opts {
+	for _, opt := range c.Config.ReplicationOptions {
 		opt.applyStartReplicationOptions(&options)
 	}
 	err = pglogrepl.StartReplication(context.Background(), c.conn,

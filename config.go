@@ -12,6 +12,8 @@ type Config struct {
 	Password       string
 	ConnectTimeout time.Duration
 	PollingTimeout time.Duration
+
+	ReplicationOptions []ReplicationOption
 }
 
 func NewConfig() *Config {

@@ -26,6 +26,10 @@ func TestConsumer(t *testing.T) {
 			Database: "postgres",
 			// PollingTimeout: time.Millisecond * 10,
 			PollingTimeout: time.Second * 3,
+			ReplicationOptions: []postgres.ReplicationOption{
+				postgres.WithPluginArgs(`"pretty-print" 'true'`),
+				postgres.WithReplicationMode(pglogrepl.LogicalReplication),
+			},
 		},
 	}
 
@@ -33,8 +37,6 @@ func TestConsumer(t *testing.T) {
 
 	err := concumer.Subscribe(
 		postgres.SlotOffset{SlotName: "golang_replication_slot_temp"},
-		postgres.WithPluginArgs(`"pretty-print" 'true'`),
-		postgres.WithReplicationMode(pglogrepl.LogicalReplication),
 	)
 	if err != nil {
 		t.Fatal(err)
