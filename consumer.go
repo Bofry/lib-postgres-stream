@@ -21,8 +21,9 @@ type Consumer struct {
 
 	DisableAutoAck bool
 
-	conn *pgconn.PgConn
-	wg   sync.WaitGroup
+	conn  *pgconn.PgConn
+	slots map[string]pglogrepl.LSN
+	wg    sync.WaitGroup
 
 	mutex       sync.Mutex
 	initialized bool
@@ -30,8 +31,40 @@ type Consumer struct {
 	disposed    bool
 }
 
-func (c *Consumer) Subscribe(slot SlotOffsetInfo) error {
-	return c.subscribe(slot.getSlotOffset())
+func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
+	if c.disposed {
+		return fmt.Errorf("the Consumer has been disposed")
+	}
+	if c.running {
+		return fmt.Errorf("the Consumer is running")
+	}
+
+	var err error
+	c.mutex.Lock()
+	defer func() {
+		if err != nil {
+			c.running = false
+			c.disposed = true
+		}
+		c.mutex.Unlock()
+	}()
+	c.init()
+	c.running = true
+
+	// new slots
+	c.slots = make(map[string]pglogrepl.LSN)
+
+	// new conn
+	{
+		conn, err := c.createConn()
+		if err != nil {
+			return err
+		}
+
+		c.conn = conn
+	}
+
+	return c.subscribe(slots...)
 }
 
 func (c *Consumer) Close() {
@@ -84,47 +117,32 @@ func (c *Consumer) doAck(xLogPos pglogrepl.LSN) error {
 		})
 }
 
-func (c *Consumer) subscribe(slot SlotOffset) error {
-	if c.disposed {
-		return fmt.Errorf("the Consumer has been disposed")
-	}
-	if c.running {
-		return fmt.Errorf("the Consumer is running")
-	}
-
-	var err error
-	c.mutex.Lock()
-	defer func() {
-		if err != nil {
-			c.running = false
-			c.disposed = true
-		}
-		c.mutex.Unlock()
-	}()
-	c.init()
-	c.running = true
-
-	// new conn
-	{
-		conn, err := c.createConn()
-		if err != nil {
-			return err
-		}
-
-		c.conn = conn
-	}
-
-	// start LSN
+func (c *Consumer) subscribe(slots ...SlotOffsetInfo) error {
 	var (
 		sysident pglogrepl.IdentifySystemResult
-		startLSN pglogrepl.LSN
 
 		conn = c.conn
 	)
-	{
-		sysident, err = pglogrepl.IdentifySystem(context.Background(), conn)
-		if err != nil {
-			return err
+
+	sysident, err := pglogrepl.IdentifySystem(context.Background(), conn)
+	if err != nil {
+		return err
+	}
+	c.Logger.Println(
+		"SystemID:", sysident.SystemID,
+		"Timeline:", sysident.Timeline,
+		"XLogPos:", sysident.XLogPos,
+		"DBName:", sysident.DBName)
+
+	// find startLSN for all slots
+	for _, info := range slots {
+		var (
+			startLSN pglogrepl.LSN
+			slot     = info.getSlotOffset()
+		)
+
+		if _, ok := c.slots[slot.Slot]; ok {
+			continue
 		}
 
 		switch slot.LSN {
@@ -151,125 +169,129 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 		}
 
 		c.Logger.Println(
-			"SystemID:", sysident.SystemID,
-			"Timeline:", sysident.Timeline,
-			"XLogPos:", sysident.XLogPos,
-			"DBName:", sysident.DBName,
+			"Slot:", slot.Slot,
 			"StartLSN:", startLSN)
+
+		c.slots[slot.Slot] = startLSN
 	}
 
 	var options = pglogrepl.StartReplicationOptions{}
 	for _, opt := range c.Config.ReplicationOptions {
 		opt.applyStartReplicationOptions(&options)
 	}
-	err = pglogrepl.StartReplication(context.Background(), c.conn,
-		slot.Slot,
-		startLSN,
-		options)
-	if err != nil {
-		return err
-	}
 
 	// event loop
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	for slot, startLSN := range c.slots {
+		err = pglogrepl.StartReplication(context.Background(), c.conn,
+			slot,
+			startLSN,
+			options)
+		if err != nil {
+			return err
+		}
 
-		var (
-			timeout  = c.Config.PollingTimeout
-			deadline time.Time
+		// event loop
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
 
-			clientXLogPos pglogrepl.LSN
-		)
+			c.poll(slot, c.Config.PollingTimeout)
+		}()
+	}
+	return nil
+}
 
-		for c.running {
-			deadline = time.Now().Add(timeout)
+func (c *Consumer) poll(slot string, timeout time.Duration) {
+	var (
+		deadline time.Time
+		xLogPos  pglogrepl.LSN
+	)
 
-			msg, err := c.read(deadline)
+	for c.running {
+		deadline = time.Now().Add(timeout)
+
+		msg, err := c.read(deadline)
+		if err != nil {
+			// ignore any error if disposed or not running
+			if !c.running {
+				break
+			}
+			if pgconn.Timeout(err) {
+				continue
+			}
+			if !c.handleError(err) {
+				c.Logger.Fatalf("%% Error: %v\n", err)
+				break
+			}
+		}
+		if msg == nil {
+			// ignore all invalid messages
+			continue
+		}
+
+		switch msg.Data[0] {
+		case pglogrepl.PrimaryKeepaliveMessageByteID:
+			pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(msg.Data[1:])
 			if err != nil {
-				// ignore any error if disposed or not running
-				if !c.running {
-					break
+				panic(err)
+			}
+
+			// update XLogPos
+			if pkm.ServerWALEnd > xLogPos {
+				xLogPos = pkm.ServerWALEnd
+			}
+			// if pkm.ReplyRequested {
+			// 	deadline = time.Time{}
+			// }
+
+			ev := PrimaryKeepaliveMessageEvent(pkm)
+			c.handleEvent(&ev)
+
+			// ack
+			if err = c.doAck(xLogPos); err != nil {
+				if !c.handleError(err) {
+					c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot, xLogPos, err)
 				}
-				if pgconn.Timeout(err) {
-					continue
-				}
+			}
+		case pglogrepl.XLogDataByteID:
+			xld, err := pglogrepl.ParseXLogData(msg.Data[1:])
+			if err != nil {
 				if !c.handleError(err) {
 					c.Logger.Fatalf("%% Error: %v\n", err)
 					break
 				}
 			}
-			if msg == nil {
-				// ignore all invalid messages
+
+			// update XLogPos
+			if xld.WALStart > xLogPos {
+				xLogPos = xld.WALStart
+			}
+
+			ev := XLogDataEvent(xld)
+			c.handleEvent(&ev)
+
+			err = c.handlerMessae(slot, xLogPos, xld)
+			if err != nil {
+				if !c.handleError(err) {
+					c.Logger.Fatalf("%% Error: %v\n", err)
+					break
+				}
+			}
+
+			if c.DisableAutoAck {
 				continue
 			}
 
-			switch msg.Data[0] {
-			case pglogrepl.PrimaryKeepaliveMessageByteID:
-				pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(msg.Data[1:])
-				if err != nil {
-					panic(err)
+			// ack
+			if err = c.doAck(xLogPos); err != nil {
+				if !c.handleError(err) {
+					c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot, xLogPos, err)
 				}
-
-				// update clientXLogPos
-				if pkm.ServerWALEnd > clientXLogPos {
-					clientXLogPos = pkm.ServerWALEnd
-				}
-				// if pkm.ReplyRequested {
-				// 	deadline = time.Time{}
-				// }
-
-				ev := PrimaryKeepaliveMessageEvent(pkm)
-				c.handleEvent(&ev)
-
-				// ack
-				if err = c.doAck(clientXLogPos); err != nil {
-					if !c.handleError(err) {
-						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.Slot, clientXLogPos, err)
-					}
-				}
-			case pglogrepl.XLogDataByteID:
-				xld, err := pglogrepl.ParseXLogData(msg.Data[1:])
-				if err != nil {
-					if !c.handleError(err) {
-						c.Logger.Fatalf("%% Error: %v\n", err)
-						break
-					}
-				}
-
-				// update clientXLogPos
-				if xld.WALStart > clientXLogPos {
-					clientXLogPos = xld.WALStart
-				}
-
-				ev := XLogDataEvent(xld)
-				c.handleEvent(&ev)
-
-				err = c.handlerMessae(slot.Slot, clientXLogPos, xld)
-				if err != nil {
-					if !c.handleError(err) {
-						c.Logger.Fatalf("%% Error: %v\n", err)
-						break
-					}
-				}
-
-				if c.DisableAutoAck {
-					continue
-				}
-
-				// ack
-				if err = c.doAck(clientXLogPos); err != nil {
-					if !c.handleError(err) {
-						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.Slot, clientXLogPos, err)
-					}
-				}
-			default:
-				// do nothing
 			}
+		default:
+			// do nothing
 		}
-	}()
-
-	return nil
+	}
 }
 
 func (c *Consumer) read(deadline time.Time) (*pgproto3.CopyData, error) {
