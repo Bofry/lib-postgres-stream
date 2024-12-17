@@ -8,7 +8,7 @@ import (
 )
 
 type Message struct {
-	SlotName string
+	Slot     string
 	Delegate MessageDelegate
 
 	consumedXLogPos pglogrepl.LSN

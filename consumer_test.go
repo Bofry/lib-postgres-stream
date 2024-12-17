@@ -36,7 +36,7 @@ func TestConsumer(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), 13*time.Second)
 
 	err := concumer.Subscribe(
-		postgres.SlotOffset{SlotName: "golang_replication_slot_temp"},
+		postgres.SlotOffset{Slot: "golang_replication_slot_temp"},
 	)
 	if err != nil {
 		t.Fatal(err)

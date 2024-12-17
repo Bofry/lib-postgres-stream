@@ -3,8 +3,8 @@ package postgres
 var _ SlotOffsetInfo = SlotOffset{}
 
 type SlotOffset struct {
-	SlotName string
-	LSN      string
+	Slot string
+	LSN  string
 }
 
 // getSlotOffset implements SlotOffsetInfo.

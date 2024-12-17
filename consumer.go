@@ -129,7 +129,7 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 
 		switch slot.LSN {
 		case StreamUnspecifiedOffset:
-			lsn, err := PeekReplicationSlotConfirmedFlushLSN(context.Background(), conn, slot.SlotName)
+			lsn, err := PeekReplicationSlotConfirmedFlushLSN(context.Background(), conn, slot.Slot)
 			if err != nil {
 				return err
 			}
@@ -163,7 +163,7 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 		opt.applyStartReplicationOptions(&options)
 	}
 	err = pglogrepl.StartReplication(context.Background(), c.conn,
-		slot.SlotName,
+		slot.Slot,
 		startLSN,
 		options)
 	if err != nil {
@@ -225,7 +225,7 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 				// ack
 				if err = c.doAck(clientXLogPos); err != nil {
 					if !c.handleError(err) {
-						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.SlotName, clientXLogPos, err)
+						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.Slot, clientXLogPos, err)
 					}
 				}
 			case pglogrepl.XLogDataByteID:
@@ -245,7 +245,7 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 				ev := XLogDataEvent(xld)
 				c.handleEvent(&ev)
 
-				err = c.handlerMessae(slot.SlotName, clientXLogPos, xld)
+				err = c.handlerMessae(slot.Slot, clientXLogPos, xld)
 				if err != nil {
 					if !c.handleError(err) {
 						c.Logger.Fatalf("%% Error: %v\n", err)
@@ -260,7 +260,7 @@ func (c *Consumer) subscribe(slot SlotOffset) error {
 				// ack
 				if err = c.doAck(clientXLogPos); err != nil {
 					if !c.handleError(err) {
-						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.SlotName, clientXLogPos, err)
+						c.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", slot.Slot, clientXLogPos, err)
 					}
 				}
 			default:
@@ -305,7 +305,7 @@ func (c *Consumer) handlerMessae(slotName string, consumedXLogPos pglogrepl.LSN,
 		defer c.wg.Done()
 
 		msg := Message{
-			SlotName:        slotName,
+			Slot:            slotName,
 			Delegate:        &clientMessageDelegate{client: c},
 			consumedXLogPos: consumedXLogPos,
 			data:            &data,
