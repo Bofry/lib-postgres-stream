@@ -17,6 +17,11 @@ const (
 	StreamUnspecifiedOffset    string = ""
 )
 
+const (
+	LogicalReplication  = pglogrepl.LogicalReplication
+	PhysicalReplication = pglogrepl.PhysicalReplication
+)
+
 var (
 	defaultLogger *log.Logger = log.New(os.Stdout, LOGGER_PREFIX, log.LstdFlags|log.Lmsgprefix)
 )
