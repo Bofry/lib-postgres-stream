@@ -20,16 +20,14 @@ func TestConsumer(t *testing.T) {
 		},
 		Logger: log.New(os.Stdout, "[test] ", log.Default().Flags()),
 		Config: &postgres.Config{
-			Host:     "192.168.56.58",
-			User:     "postgres",
-			Password: "postgres1234",
-			Database: "postgres",
-			// PollingTimeout: time.Millisecond * 10,
-			PollingTimeout: time.Second * 3,
-			ReplicationOptions: []postgres.ReplicationOption{
-				postgres.WithPluginArgs(`"pretty-print" 'true'`),
-				postgres.WithReplicationMode(pglogrepl.LogicalReplication),
-			},
+			Host:           "192.168.56.58",
+			User:           "postgres",
+			Password:       "postgres1234",
+			Database:       "postgres",
+			PollingTimeout: time.Second * 1,
+			ReplicationOptions: postgres.ConfigureReplicationOptions().
+				WithPluginArgs(`"pretty-print" 'true'`).
+				WithReplicationMode(pglogrepl.LogicalReplication),
 		},
 	}
 
