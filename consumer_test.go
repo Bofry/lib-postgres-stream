@@ -9,7 +9,6 @@ import (
 	"time"
 
 	postgres "github.com/Bofry/lib-postgres-stream"
-	"github.com/jackc/pglogrepl"
 )
 
 func TestConsumer(t *testing.T) {
@@ -27,7 +26,7 @@ func TestConsumer(t *testing.T) {
 			PollingTimeout: time.Second * 1,
 			ReplicationOptions: postgres.ConfigureReplicationOptions().
 				WithPluginArgs(`"pretty-print" 'true'`).
-				WithReplicationMode(pglogrepl.LogicalReplication),
+				WithReplicationMode(postgres.LogicalReplication),
 		},
 	}
 
