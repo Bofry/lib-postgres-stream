@@ -13,8 +13,9 @@ import (
 
 func TestConsumer(t *testing.T) {
 	concumer := &postgres.Consumer{
+		DisableAutoAck: false,
 		MessageHandler: func(message *postgres.Message) error {
-			fmt.Println("data:", string(message.Bytes()))
+			fmt.Println("data:", string(message.Body()))
 			return nil
 		},
 		Logger: log.New(os.Stdout, "[test] ", log.Default().Flags()),
