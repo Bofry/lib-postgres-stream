@@ -2,9 +2,7 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -90,36 +88,20 @@ func IsDuplicateObjectError(err error) bool {
 	return false
 }
 
-func CreateReplicationSlot(ctx context.Context, conn *pgconn.PgConn, source CreateReplicationSlotSource) error {
-	_, err := pglogrepl.CreateReplicationSlot(ctx, conn,
-		source.SlotName,
-		source.Plugin,
-		pglogrepl.CreateReplicationSlotOptions{
-			Temporary: source.Temporary,
-			Mode:      pglogrepl.LogicalReplication,
-		})
-	if err != nil {
-		return err
+func CreateReplicationSlot(ctx context.Context, conn *pgconn.PgConn, provider CreateReplicationSlotSourceProvider) error {
+	for _, source := range provider.sources {
+		_, err := pglogrepl.CreateReplicationSlot(ctx, conn,
+			source.SlotName,
+			source.Plugin,
+			pglogrepl.CreateReplicationSlotOptions{
+				Temporary: source.Temporary,
+				Mode:      source.SlotType,
+			})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
-}
-
-func LoadCreateReplicationSlotSource(filepath string) ([]CreateReplicationSlotSource, error) {
-	buf, err := os.ReadFile(filepath)
-	if err != nil {
-		return nil, err
-	}
-
-	return ParseCreateReplicationSlotSource(buf)
-}
-
-func ParseCreateReplicationSlotSource(buf []byte) ([]CreateReplicationSlotSource, error) {
-	var source []CreateReplicationSlotSource
-	err := json.Unmarshal([]byte(buf), &source)
-	if err != nil {
-		return nil, err
-	}
-	return source, nil
 }
 
 func NewConn(config *Config) (*pgconn.PgConn, error) {

@@ -17,24 +17,30 @@ type CreateReplicationSlotSource struct {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (c *CreateReplicationSlotSource) UnmarshalJSON(data []byte) error {
+func (s *CreateReplicationSlotSource) UnmarshalJSON(data []byte) error {
 	type Alias CreateReplicationSlotSource
-	s := &struct {
+	dummy := &struct {
 		*Alias
 		SlotType string `yaml:"SlotType"`
 	}{
-		Alias: (*Alias)(c),
+		Alias: (*Alias)(s),
 	}
 
-	if err := json.Unmarshal(data, &s); err != nil {
+	if err := json.Unmarshal(data, &dummy); err != nil {
 		return err
 	}
 
-	t, err := ParseReplicationMode(s.SlotType)
+	t, err := ParseReplicationMode(dummy.SlotType)
 	if err != nil {
 		return err
 	}
-	c.SlotType = t
+	s.SlotType = t
 
 	return nil
+}
+
+func (s *CreateReplicationSlotSource) AsProvider() *CreateReplicationSlotSourceProvider {
+	provider := new(CreateReplicationSlotSourceProvider)
+	provider.AppendSource(*s)
+	return provider
 }
