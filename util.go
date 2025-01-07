@@ -88,7 +88,7 @@ func IsDuplicateObjectError(err error) bool {
 	return false
 }
 
-func CreateReplicationSlot(ctx context.Context, conn *pgconn.PgConn, provider *CreateReplicationSlotSourceProvider) error {
+func CreateReplicationSlot(ctx context.Context, conn *pgconn.PgConn, provider CreateReplicationSlotSourceProvider) error {
 	for _, source := range provider.sources {
 		_, err := pglogrepl.CreateReplicationSlot(ctx, conn,
 			source.SlotName,

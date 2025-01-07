@@ -29,6 +29,10 @@ func (p *CreateReplicationSlotSourceProvider) Scan(buf []byte) error {
 	return nil
 }
 
+func (p *CreateReplicationSlotSourceProvider) ScanString(text string) error {
+	return p.Scan([]byte(text))
+}
+
 func (p *CreateReplicationSlotSourceProvider) ScanFile(filepath string) error {
 	buf, err := os.ReadFile(filepath)
 	if err != nil {

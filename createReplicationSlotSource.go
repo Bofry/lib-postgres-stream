@@ -39,8 +39,8 @@ func (s *CreateReplicationSlotSource) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (s *CreateReplicationSlotSource) AsProvider() *CreateReplicationSlotSourceProvider {
-	provider := new(CreateReplicationSlotSourceProvider)
-	provider.AppendSource(*s)
-	return provider
+func (s *CreateReplicationSlotSource) AsProvider() CreateReplicationSlotSourceProvider {
+	var p CreateReplicationSlotSourceProvider
+	p.AppendSource(*s)
+	return p
 }
