@@ -48,5 +48,4 @@ func TestCreateReplicationSlotSource_Set(t *testing.T) {
 		log.Fatalf("error: %v", err)
 	}
 	fmt.Printf("--- source:\n%+v\n\n", source)
-
 }

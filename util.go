@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -102,33 +104,20 @@ func CreateReplicationSlot(ctx context.Context, conn *pgconn.PgConn, source Crea
 	return nil
 }
 
-func CheckMissingReplicationSlot(ctx context.Context, conn *pgconn.PgConn, slots []string) (missingSlots []string, err error) {
-	if len(slots) == 0 {
-		return
-	}
-
-	var slotParam []string = make([]string, len(slots))
-	for i, slot := range slots {
-		param, err := conn.EscapeString(slot)
-		if err != nil {
-			return nil, err
-		}
-		slotParam[i] = "'" + param + "'"
-	}
-	sql := fmt.Sprintf(__SQL_CHECK_MISSING_REPLICATION_SLOT, strings.Join(slotParam, ","))
-	reader := conn.Exec(ctx, sql)
-	result, err := reader.ReadAll()
+func LoadCreateReplicationSlotSource(filepath string) ([]CreateReplicationSlotSource, error) {
+	buf, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range result {
-		if len(r.Rows) > 0 {
-			missingSlots = make([]string, len(r.Rows))
-			for i, v := range r.Rows {
-				missingSlots[i] = string(v[0])
-			}
-			return missingSlots, nil
-		}
+
+	return ParseCreateReplicationSlotSource(buf)
+}
+
+func ParseCreateReplicationSlotSource(buf []byte) ([]CreateReplicationSlotSource, error) {
+	var source []CreateReplicationSlotSource
+	err := json.Unmarshal([]byte(buf), &source)
+	if err != nil {
+		return nil, err
 	}
-	return
+	return source, nil
 }

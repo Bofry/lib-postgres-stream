@@ -21,14 +21,6 @@ SELECT slot_name,
 			 confirmed_flush_lsn
   FROM "pg_catalog"."pg_replication_slots"
 WHERE slot_name IN (%s);`
-	__SQL_CHECK_MISSING_REPLICATION_SLOT string = `
-SELECT list.slot_name
-  FROM (
-    SELECT unnest(ARRAY[%s])::name AS slot_name
-  ) AS list
-  LEFT JOIN "pg_catalog"."pg_replication_slots" AS slot
-    ON list.slot_name = slot.slot_name
- WHERE slot.slot_name IS NULL;`
 
 	__PG_ERRCODE_DUPLICATE_OBJECT = "42710"
 

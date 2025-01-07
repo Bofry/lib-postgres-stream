@@ -18,7 +18,6 @@ type Consumer struct {
 	ErrorHandler   ErrorHandleProc
 	Logger         *log.Logger
 	Config         *Config
-	AutoCreateSlot bool // 自動註冊 slot
 	DisableAutoAck bool
 
 	conn  *pgconn.PgConn
