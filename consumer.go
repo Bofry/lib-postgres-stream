@@ -55,7 +55,7 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 
 	// new conn
 	{
-		conn, err := c.createConn()
+		conn, err := NewConn(c.Config)
 		if err != nil {
 			return err
 		}
@@ -91,7 +91,7 @@ func (c *Consumer) init() {
 	}
 
 	if c.Config == nil {
-		c.Config = NewConfig()
+		c.Config = new(Config)
 	}
 
 	if c.Logger == nil {
@@ -234,20 +234,4 @@ func (c *Consumer) read(deadline time.Time) (*pgproto3.CopyData, error) {
 		return nil, nil
 	}
 	return msg, nil
-}
-
-func (c *Consumer) createConn() (*pgconn.PgConn, error) {
-	c.Config.init()
-
-	config, err := pgconn.ParseConfig(fmt.Sprintf("postgres://%s?replication=database", c.Config.Host))
-	if err != nil {
-		panic(err)
-	}
-	config.Port = c.Config.Port
-	config.User = c.Config.User
-	config.Password = c.Config.Password
-	config.Database = c.Config.Database
-	config.ConnectTimeout = c.Config.ConnectTimeout
-
-	return pgconn.ConnectConfig(context.Background(), config)
 }

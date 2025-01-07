@@ -121,3 +121,19 @@ func ParseCreateReplicationSlotSource(buf []byte) ([]CreateReplicationSlotSource
 	}
 	return source, nil
 }
+
+func NewConn(config *Config) (*pgconn.PgConn, error) {
+	config.init()
+
+	c, err := pgconn.ParseConfig(fmt.Sprintf("postgres://%s?replication=database", config.Host))
+	if err != nil {
+		return nil, err
+	}
+	c.Port = config.Port
+	c.User = config.User
+	c.Password = config.Password
+	c.Database = config.Database
+	c.ConnectTimeout = config.ConnectTimeout
+
+	return pgconn.ConnectConfig(context.Background(), c)
+}
