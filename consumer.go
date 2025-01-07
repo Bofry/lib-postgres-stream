@@ -18,11 +18,11 @@ type Consumer struct {
 	ErrorHandler   ErrorHandleProc
 	Logger         *log.Logger
 	Config         *Config
-
+	AutoCreateSlot bool // 自動註冊 slot
 	DisableAutoAck bool
 
 	conn  *pgconn.PgConn
-	slots map[string]pglogrepl.LSN
+	slots map[string]ReplicationSlotSource
 	wg    sync.WaitGroup
 
 	mutex       sync.Mutex
@@ -52,7 +52,7 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 	c.running = true
 
 	// new slots
-	c.slots = make(map[string]pglogrepl.LSN)
+	c.slots = make(map[string]ReplicationSlotSource)
 
 	// new conn
 	{
@@ -118,12 +118,22 @@ func (c *Consumer) doAck(xLogPos pglogrepl.LSN) error {
 }
 
 func (c *Consumer) subscribe(slots ...SlotOffsetInfo) error {
+	if len(slots) == 0 {
+		return nil
+	}
+
 	var (
-		sysident pglogrepl.IdentifySystemResult
+		sysident  pglogrepl.IdentifySystemResult
+		slotnames []string = make([]string, len(slots))
 
 		conn = c.conn
 	)
 
+	for i, v := range slots {
+		slotnames[i] = v.getSlotOffset().Slot
+	}
+
+	// get system info
 	sysident, err := pglogrepl.IdentifySystem(context.Background(), conn)
 	if err != nil {
 		return err
@@ -134,45 +144,37 @@ func (c *Consumer) subscribe(slots ...SlotOffsetInfo) error {
 		"XLogPos:", sysident.XLogPos,
 		"DBName:", sysident.DBName)
 
-	// find startLSN for all slots
+	// get slot info
+	slotRecords, err := SelectReplicationSlot(context.Background(), conn, slotnames)
+	if err != nil {
+		return err
+	}
+	for _, r := range slotRecords {
+		c.slots[r.SlotName] = r
+	}
+
+	// update startLSN for all slots
 	for _, info := range slots {
 		var (
-			startLSN pglogrepl.LSN
-			slot     = info.getSlotOffset()
+			slot   = info.getSlotOffset()
+			source = c.slots[slot.Slot]
 		)
-
-		if _, ok := c.slots[slot.Slot]; ok {
-			continue
-		}
 
 		switch slot.LSN {
 		case StreamUnspecifiedOffset:
-			lsn, err := PeekReplicationSlotConfirmedFlushLSN(context.Background(), conn, slot.Slot)
-			if err != nil {
-				return err
-			}
-			startLSN = lsn
-
-			if startLSN == pglogrepl.LSN(0) {
-				startLSN = sysident.XLogPos
-			}
+			source.startLSN = source.ConfirmedFlushLSN
 		case StreamZeroOffset:
-			startLSN = pglogrepl.LSN(0)
+			source.startLSN = pglogrepl.LSN(0)
 		case StreamNeverDeliveredOffset:
-			startLSN = sysident.XLogPos
+			source.startLSN = sysident.XLogPos
 		default:
 			lsn, err := pglogrepl.ParseLSN(slot.LSN)
 			if err != nil {
 				return err
 			}
-			startLSN = lsn
+			source.startLSN = lsn
 		}
-
-		c.Logger.Println(
-			"Slot:", slot.Slot,
-			"StartLSN:", startLSN)
-
-		c.slots[slot.Slot] = startLSN
+		c.slots[slot.Slot] = source
 	}
 
 	var options = pglogrepl.StartReplicationOptions{}
@@ -180,11 +182,12 @@ func (c *Consumer) subscribe(slots ...SlotOffsetInfo) error {
 		opt.applyStartReplicationOptions(&options)
 	}
 
-	// event loop
-	for slot, startLSN := range c.slots {
+	// start event loop
+	for slot, source := range c.slots {
+		c.Logger.Printf("StartReplication:: %+v", source)
 		err = pglogrepl.StartReplication(context.Background(), c.conn,
 			slot,
-			startLSN,
+			source.startLSN,
 			options)
 		if err != nil {
 			return err

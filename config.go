@@ -12,6 +12,7 @@ type Config struct {
 	Password       string
 	ConnectTimeout time.Duration
 	PollingTimeout time.Duration
+	OutputPlugin   string
 
 	ReplicationOptions []ReplicationOption
 }
@@ -31,5 +32,8 @@ func (c *Config) init() {
 	}
 	if c.PollingTimeout < 0 {
 		c.PollingTimeout = 0
+	}
+	if c.OutputPlugin == "" {
+		c.OutputPlugin = Wal2JsonPlugin
 	}
 }

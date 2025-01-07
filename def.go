@@ -10,7 +10,27 @@ import (
 const (
 	LOGGER_PREFIX string = "[lib-postgres-stream] "
 
-	__SQL_REPLICATION_SLOT_CONFIRMED_FLUSH_LSN string = `SELECT confirmed_flush_lsn FROM "pg_catalog"."pg_replication_slots" WHERE slot_name ='%s';`
+	__SQL_SELECT_REPLICATION_SLOT string = `
+SELECT slot_name,
+       plugin,
+			 slot_type,
+			 database,
+			 temporary,
+			 active,
+			 restart_lsn,
+			 confirmed_flush_lsn
+  FROM "pg_catalog"."pg_replication_slots"
+WHERE slot_name IN (%s);`
+	__SQL_CHECK_MISSING_REPLICATION_SLOT string = `
+SELECT list.slot_name
+  FROM (
+    SELECT unnest(ARRAY[%s])::name AS slot_name
+  ) AS list
+  LEFT JOIN "pg_catalog"."pg_replication_slots" AS slot
+    ON list.slot_name = slot.slot_name
+ WHERE slot.slot_name IS NULL;`
+
+	__PG_ERRCODE_DUPLICATE_OBJECT = "42710"
 
 	StreamZeroOffset           string = "0"
 	StreamNeverDeliveredOffset string = ">"
@@ -20,6 +40,8 @@ const (
 const (
 	LogicalReplication  = pglogrepl.LogicalReplication
 	PhysicalReplication = pglogrepl.PhysicalReplication
+
+	Wal2JsonPlugin = "wal2json"
 )
 
 var (
@@ -27,7 +49,8 @@ var (
 )
 
 type (
-	LSN = pglogrepl.LSN
+	LSN             = pglogrepl.LSN
+	ReplicationMode = pglogrepl.ReplicationMode
 
 	MessageHandleProc func(message *Message) error
 	EventHandleProc   func(event Event) error

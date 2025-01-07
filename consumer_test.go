@@ -26,8 +26,7 @@ func TestConsumer(t *testing.T) {
 			Database:       "postgres",
 			PollingTimeout: time.Second * 1,
 			ReplicationOptions: postgres.ConfigureReplicationOptions().
-				WithPluginArgs(`"pretty-print" 'true'`).
-				WithReplicationMode(postgres.LogicalReplication),
+				WithPluginArgs(`"pretty-print" 'true'`),
 		},
 	}
 
