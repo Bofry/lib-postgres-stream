@@ -26,7 +26,6 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 	var (
 		consumer = w.consumer
 		deadline time.Time
-		xLogPos  pglogrepl.LSN
 	)
 
 	for consumer.running {
@@ -41,86 +40,94 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 			if pgconn.Timeout(err) {
 				continue
 			}
-			if !w.handleError(err) {
+			if !w.processError(err) {
 				w.Logger.Fatalf("%% Error: %v\n", err)
-				break
+				continue
 			}
 		}
+
 		if msg == nil {
 			// ignore all invalid messages
 			continue
 		}
 
-		switch msg.Data[0] {
-		case pglogrepl.PrimaryKeepaliveMessageByteID:
-			pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(msg.Data[1:])
-			if err != nil {
-				panic(err)
-			}
-
-			// update XLogPos
-			if pkm.ServerWALEnd > xLogPos {
-				xLogPos = pkm.ServerWALEnd
-			}
-			// if pkm.ReplyRequested {
-			// 	deadline = time.Time{}
-			// }
-
-			ev := PrimaryKeepaliveMessageEvent(pkm)
-			w.handleEvent(&ev)
-
-			if !w.AutoAck || xLogPos < pkm.ServerWALEnd {
-				continue
-			}
-
-			// ack
-			if err = consumer.doAck(xLogPos); err != nil {
-				if !w.handleError(err) {
-					w.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", w.Slot, xLogPos, err)
-				}
-			}
-		case pglogrepl.XLogDataByteID:
-			xld, err := pglogrepl.ParseXLogData(msg.Data[1:])
-			if err != nil {
-				if !w.handleError(err) {
-					w.Logger.Fatalf("%% Error: %v\n", err)
-					break
-				}
-			}
-
-			// update XLogPos
-			if xld.WALStart > xLogPos {
-				xLogPos = xld.WALStart
-			}
-
-			ev := XLogDataEvent(xld)
-			w.handleEvent(&ev)
-
-			err = w.handleMessage(xLogPos, xld)
-			if err != nil {
-				if !w.handleError(err) {
-					w.Logger.Fatalf("%% Error: %v\n", err)
-					break
-				}
-			}
-
-			if !w.AutoAck || xLogPos < xld.WALStart {
-				continue
-			}
-
-			// ack
-			if err = consumer.doAck(xLogPos); err != nil {
-				if !w.handleError(err) {
-					w.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", w.Slot, xLogPos, err)
-				}
-			}
-		default:
-			// do nothing
-		}
+		w.processData(msg.Data)
 	}
 }
 
-func (w *consumerPollingWorker) handleMessage(xLogPos pglogrepl.LSN, data pglogrepl.XLogData) error {
+func (w *consumerPollingWorker) processData(data []byte) {
+	var (
+		consumer = w.consumer
+		xLogPos  pglogrepl.LSN
+	)
+
+	switch data[0] {
+	case pglogrepl.PrimaryKeepaliveMessageByteID:
+		pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(data[1:])
+		if err != nil {
+			if !w.processError(err) {
+				w.Logger.Printf("ParsePrimaryKeepaliveMessage() failed on (%s#%s): %+v", w.Slot, xLogPos, err)
+			}
+			break
+		}
+
+		// update XLogPos
+		if pkm.ServerWALEnd > xLogPos {
+			xLogPos = pkm.ServerWALEnd
+		}
+		// if pkm.ReplyRequested {
+		// 	deadline = time.Time{}
+		// }
+
+		ev := PrimaryKeepaliveMessageEvent(pkm)
+		w.processEvent(&ev)
+
+		if !w.AutoAck || xLogPos < pkm.ServerWALEnd {
+			break
+		}
+
+		// ack
+		if err = consumer.doAck(xLogPos); err != nil {
+			if !w.processError(err) {
+				w.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", w.Slot, xLogPos, err)
+			}
+			break
+		}
+	case pglogrepl.XLogDataByteID:
+		xld, err := pglogrepl.ParseXLogData(data[1:])
+		if err != nil {
+			if !w.processError(err) {
+				w.Logger.Printf("%% Error: %v\n", err)
+			}
+			break
+		}
+
+		// update XLogPos
+		if xld.WALStart > xLogPos {
+			xLogPos = xld.WALStart
+		}
+
+		ev := XLogDataEvent(xld)
+		w.processEvent(&ev)
+		w.processMessage(xLogPos, xld)
+
+		if !w.AutoAck || xLogPos < xld.WALStart {
+			break
+		}
+
+		// ack
+		if err = consumer.doAck(xLogPos); err != nil {
+			if !w.processError(err) {
+				w.Logger.Printf("SendStandbyStatusUpdate failed on (%s#%s): %+v", w.Slot, xLogPos, err)
+			}
+			break
+		}
+	default:
+		// do nothing
+	}
+}
+
+func (w *consumerPollingWorker) processMessage(xLogPos pglogrepl.LSN, data pglogrepl.XLogData) {
 	if w.MessageHandler != nil {
 		w.consumer.wg.Add(1)
 		defer w.consumer.wg.Done()
@@ -134,12 +141,11 @@ func (w *consumerPollingWorker) handleMessage(xLogPos pglogrepl.LSN, data pglogr
 			systemID:        w.SystemID,
 		}
 
-		return w.MessageHandler(&msg)
+		w.MessageHandler(&msg)
 	}
-	return nil
 }
 
-func (w *consumerPollingWorker) handleEvent(event Event) {
+func (w *consumerPollingWorker) processEvent(event Event) {
 	if w.EventHandler != nil {
 		w.consumer.wg.Add(1)
 		defer w.consumer.wg.Done()
@@ -148,7 +154,7 @@ func (w *consumerPollingWorker) handleEvent(event Event) {
 	}
 }
 
-func (w *consumerPollingWorker) handleError(err error) (disposed bool) {
+func (w *consumerPollingWorker) processError(err error) (disposed bool) {
 	if w.EventHandler != nil {
 		w.consumer.wg.Add(1)
 		defer w.consumer.wg.Done()

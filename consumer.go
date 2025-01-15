@@ -18,7 +18,7 @@ type Consumer struct {
 	ErrorHandler   ErrorHandleProc
 	Logger         *log.Logger
 	Config         *Config
-	DisableAutoAck bool
+	AutoAck        bool
 
 	conn  *pgconn.PgConn
 	slots map[string]ReplicationSlotSource
@@ -197,7 +197,7 @@ func (c *Consumer) subscribe(slots ...SlotOffsetInfo) error {
 			Slot:           slot,
 			DBName:         sysident.DBName,
 			SystemID:       sysident.SystemID,
-			AutoAck:        !c.DisableAutoAck,
+			AutoAck:        c.AutoAck,
 			MessageHandler: c.MessageHandler,
 			EventHandler:   c.EventHandler,
 			ErrorHandler:   c.ErrorHandler,

@@ -44,7 +44,7 @@ type (
 	LSN             = pglogrepl.LSN
 	ReplicationMode = pglogrepl.ReplicationMode
 
-	MessageHandleProc func(message *Message) error
+	MessageHandleProc func(message *Message)
 	EventHandleProc   func(event Event) error
 	ErrorHandleProc   func(err error) (disposed bool)
 
