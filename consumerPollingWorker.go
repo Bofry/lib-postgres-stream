@@ -14,7 +14,6 @@ type consumerPollingWorker struct {
 	Slot     string
 	DBName   string
 	SystemID string
-	AutoAck  bool
 
 	MessageHandler MessageHandleProc
 	EventHandler   EventHandleProc
@@ -82,7 +81,7 @@ func (w *consumerPollingWorker) processData(data []byte) {
 		ev := PrimaryKeepaliveMessageEvent(pkm)
 		w.processEvent(&ev)
 
-		if !w.AutoAck || xLogPos < pkm.ServerWALEnd {
+		if xLogPos < pkm.ServerWALEnd {
 			break
 		}
 
@@ -111,7 +110,7 @@ func (w *consumerPollingWorker) processData(data []byte) {
 		w.processEvent(&ev)
 		w.processMessage(xLogPos, xld)
 
-		if !w.AutoAck || xLogPos < xld.WALStart {
+		if xLogPos < xld.WALStart {
 			break
 		}
 

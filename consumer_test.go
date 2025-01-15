@@ -13,7 +13,6 @@ import (
 
 func TestConsumer(t *testing.T) {
 	concumer := &postgres.Consumer{
-		AutoAck: true,
 		MessageHandler: func(message *postgres.Message) {
 			fmt.Println("data:", string(message.Body()))
 		},
