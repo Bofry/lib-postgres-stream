@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/Bofry/trace"
@@ -12,12 +13,22 @@ var (
 )
 
 type Message struct {
-	Slot string
+	Slot     string
+	Delegate MessageDelegate
 
 	consumedXLogPos pglogrepl.LSN
 	data            *pglogrepl.XLogData
 	database        string
 	systemID        string
+
+	responded int32
+}
+
+func (m *Message) Ack() {
+	if !atomic.CompareAndSwapInt32(&m.responded, 0, 1) {
+		return
+	}
+	m.Delegate.OnAck(m)
 }
 
 func (m *Message) SystemID() string {
@@ -38,6 +49,10 @@ func (m *Message) Timestamp() time.Time {
 
 func (m *Message) Body() []byte {
 	return m.data.WALData
+}
+
+func (m *Message) HasResponded() bool {
+	return atomic.LoadInt32(&m.responded) == 1
 }
 
 func (m *Message) Clone() *Message {
