@@ -24,13 +24,6 @@ type Message struct {
 	responded int32
 }
 
-func (m *Message) Ack() {
-	if !atomic.CompareAndSwapInt32(&m.responded, 0, 1) {
-		return
-	}
-	m.Delegate.OnAck(m)
-}
-
 func (m *Message) SystemID() string {
 	return m.systemID
 }
@@ -69,4 +62,8 @@ func (m *Message) MarshalTracerTag(builder *trace.TracerTagBuilder) error {
 	builder.String("slot", m.Slot)
 	builder.String("body", string(m.Body()))
 	return nil
+}
+
+func (m *Message) canAck() bool {
+	return atomic.CompareAndSwapInt32(&m.responded, 0, 1)
 }
