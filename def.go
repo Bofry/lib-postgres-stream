@@ -48,9 +48,9 @@ type (
 	EventHandleProc   func(event Event) error
 	ErrorHandleProc   func(err error) (disposed bool)
 
-	MessageDelegate interface {
-		OnAck(msg *Message)
-	}
+	// MessageDelegate interface {
+	// 	OnAck(msg *Message)
+	// }
 
 	Event interface {
 		ByteID() byte

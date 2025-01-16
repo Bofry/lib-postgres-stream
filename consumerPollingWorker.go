@@ -133,7 +133,6 @@ func (w *consumerPollingWorker) processMessage(xLogPos pglogrepl.LSN, data pglog
 
 		msg := Message{
 			Slot:            w.Slot,
-			Delegate:        &clientMessageDelegate{client: w.consumer},
 			consumedXLogPos: xLogPos,
 			data:            &data,
 			database:        w.DBName,
