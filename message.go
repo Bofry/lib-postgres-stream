@@ -55,7 +55,7 @@ func (m *Message) Clone() *Message {
 
 // MarshalTracerTag implements trace.TracerTagMarshaler.
 func (m *Message) MarshalTracerTag(builder *trace.TracerTagBuilder) error {
-	builder.String("systen_id", m.SystemID())
+	builder.String("system_id", m.SystemID())
 	builder.String("database", m.Database())
 	builder.String("lsn", m.StartLSN().String())
 	builder.String("timestamp", m.Timestamp().UTC().String())
