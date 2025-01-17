@@ -210,6 +210,7 @@ func (c *Consumer) subscribe(slots ...SlotOffsetInfo) error {
 			EventHandler:   c.EventHandler,
 			ErrorHandler:   c.ErrorHandler,
 			Logger:         c.Logger,
+			lastFlushLSN:   source.startLSN,
 		}
 
 		// event loop

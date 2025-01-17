@@ -20,6 +20,8 @@ type consumerPollingWorker struct {
 	EventHandler   EventHandleProc
 	ErrorHandler   ErrorHandleProc
 	Logger         *log.Logger
+
+	lastFlushLSN pglogrepl.LSN
 }
 
 func (w *consumerPollingWorker) run(timeout time.Duration) {
@@ -30,9 +32,14 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 
 	for consumer.running {
 		if consumer.pausing {
-			time.AfterFunc(timeout, func() {
-				consumer.conn.Ping(context.Background())
-			})
+			ctx, _ := context.WithTimeout(context.Background(), timeout)
+
+			err := consumer.doAck(w.lastFlushLSN)
+			if err != nil {
+				w.Logger.Printf("SendStandbyCopyDone error:: %+v", err)
+			}
+
+			<-ctx.Done()
 			continue
 		}
 
@@ -65,7 +72,7 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 func (w *consumerPollingWorker) processData(data []byte) {
 	var (
 		consumer = w.consumer
-		xLogPos  pglogrepl.LSN
+		xLogPos  = w.lastFlushLSN
 	)
 
 	switch data[0] {
@@ -100,6 +107,8 @@ func (w *consumerPollingWorker) processData(data []byte) {
 			}
 			break
 		}
+		// update lsn
+		w.lastFlushLSN = xLogPos
 	case pglogrepl.XLogDataByteID:
 		xld, err := pglogrepl.ParseXLogData(data[1:])
 		if err != nil {
@@ -129,6 +138,8 @@ func (w *consumerPollingWorker) processData(data []byte) {
 			}
 			break
 		}
+		// update lsn
+		w.lastFlushLSN = xLogPos
 	default:
 		// do nothing
 	}

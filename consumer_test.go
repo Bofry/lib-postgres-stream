@@ -12,7 +12,7 @@ import (
 )
 
 func TestConsumer(t *testing.T) {
-	concumer := &postgres.Consumer{
+	consumer := &postgres.Consumer{
 		MessageHandler: func(message *postgres.Message) {
 			fmt.Println("data:", string(message.Body()))
 		},
@@ -30,13 +30,20 @@ func TestConsumer(t *testing.T) {
 
 	ctx, _ := context.WithTimeout(context.Background(), 13*time.Second)
 
-	err := concumer.Subscribe(
+	err := consumer.Subscribe(
 		postgres.SlotOffset{Slot: "golang_replication_slot_temp"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	{
+		consumer.Pause()
+		time.AfterFunc(time.Second*8, func() {
+			consumer.Resume()
+		})
+	}
+
 	<-ctx.Done()
-	concumer.Close()
+	consumer.Close()
 }
