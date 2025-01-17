@@ -27,6 +27,7 @@ type Consumer struct {
 	initialized bool
 	running     bool
 	disposed    bool
+	pausing     bool
 }
 
 func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
@@ -48,6 +49,7 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 	}()
 	c.init()
 	c.running = true
+	c.pausing = false
 
 	// new slots
 	c.slots = make(map[string]ReplicationSlotSource)
@@ -82,6 +84,14 @@ func (c *Consumer) Close() {
 	c.wg.Wait()
 
 	c.conn.Close(context.Background())
+}
+
+func (c *Consumer) Pause() {
+	c.pausing = true
+}
+
+func (c *Consumer) Resume() {
+	c.pausing = false
 }
 
 func (c *Consumer) init() {

@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -28,6 +29,13 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 	)
 
 	for consumer.running {
+		if consumer.pausing {
+			time.AfterFunc(timeout, func() {
+				consumer.conn.Ping(context.Background())
+			})
+			continue
+		}
+
 		deadline = time.Now().Add(timeout)
 
 		msg, err := consumer.read(deadline)
