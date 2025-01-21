@@ -1,4 +1,4 @@
-package postgres
+package waldata
 
 type Wal2JsonDataField struct {
 	Name  string

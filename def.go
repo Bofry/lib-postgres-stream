@@ -34,8 +34,6 @@ const (
 	PhysicalReplication = pglogrepl.PhysicalReplication
 
 	Wal2JsonPlugin = "wal2json"
-
-	TAG_KEY = "key"
 )
 
 var (

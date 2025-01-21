@@ -1,19 +1,19 @@
-package postgres_test
+package waldata_test
 
 import (
 	"encoding/json"
 	"reflect"
 	"testing"
 
-	postgres "github.com/Bofry/lib-postgres-stream"
+	"github.com/Bofry/lib-postgres-stream/waldata"
 )
 
 func TestWal2JsonData_FillFields(t *testing.T) {
-	data := postgres.Wal2JsonData{
+	data := waldata.Wal2JsonData{
 		Kind:   "insert",
 		Schema: "public",
 		Table:  "t",
-		Fields: map[string]postgres.Wal2JsonDataField{
+		Fields: map[string]waldata.Wal2JsonDataField{
 			"id": {
 				Name:  "id",
 				Type:  "integer",
@@ -48,7 +48,7 @@ func TestWal2JsonData_FillFields(t *testing.T) {
 }
 
 func TestWal2JsonData_FillFields_WithNil(t *testing.T) {
-	data := postgres.Wal2JsonData{
+	data := waldata.Wal2JsonData{
 		Kind:   "insert",
 		Schema: "public",
 		Table:  "t",
@@ -72,11 +72,11 @@ func TestWal2JsonData_FillFields_WithNil(t *testing.T) {
 }
 
 func TestWal2JsonData_FillKeys(t *testing.T) {
-	data := postgres.Wal2JsonData{
+	data := waldata.Wal2JsonData{
 		Kind:   "delete",
 		Schema: "public",
 		Table:  "t",
-		Keys: map[string]postgres.Wal2JsonDataField{
+		Keys: map[string]waldata.Wal2JsonDataField{
 			"id": {
 				Name:  "id",
 				Type:  "integer",
@@ -104,7 +104,7 @@ func TestWal2JsonData_FillKeys(t *testing.T) {
 }
 
 func TestWal2JsonData_FillKeys_WithNil(t *testing.T) {
-	data := postgres.Wal2JsonData{
+	data := waldata.Wal2JsonData{
 		Kind:   "delete",
 		Schema: "public",
 		Table:  "t",
