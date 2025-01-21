@@ -11,6 +11,12 @@ require (
 )
 
 require (
+	github.com/Bofry/types v0.1.0 // indirect
+	github.com/cstockton/go-conv v0.0.0-20170524002450-66a2b2ba36e1 // indirect
+)
+
+require (
+	github.com/Bofry/structproto v0.2.2
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/jackc/pgio v1.0.0 // indirect
@@ -24,6 +30,4 @@ require (
 	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
