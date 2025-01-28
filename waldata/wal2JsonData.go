@@ -9,14 +9,50 @@ import (
 	"github.com/Bofry/structproto/valuebinder"
 )
 
+var (
+	_ json.Unmarshaler = new(Wal2JsonData)
+	_ json.Marshaler   = new(Wal2JsonData)
+)
+
 type Wal2JsonData struct {
-	Kind   string `json:"kind"`
-	Schema string `json:"schema"`
-	Table  string `json:"table"`
-	Fields map[string]Wal2JsonDataField
-	Keys   map[string]Wal2JsonDataField
+	Kind          string `json:"kind"`
+	Schema        string `json:"schema,omitempty"`
+	Table         string `json:"table,omitempty"`
+	Transactional bool   `json:"transactional,omitempty"`
+	Prefix        string `json:"prefix,omitempty"`
+	Content       string `json:"content,omitempty"`
+	Fields        map[string]Wal2JsonDataField
+	Keys          map[string]Wal2JsonDataField
 }
 
+// MarshalJSON implements json.Marshaler.
+func (w *Wal2JsonData) MarshalJSON() ([]byte, error) {
+	switch w.Kind {
+	case KIND_MESSAGE:
+		type Alias Wal2JsonData
+		v := &struct {
+			Transactional bool   `json:"transactional"`
+			Prefix        string `json:"prefix"`
+			Content       string `json:"content"`
+			*Alias
+		}{
+			Alias: (*Alias)(w),
+		}
+		return json.Marshal(v)
+	default:
+		type Alias Wal2JsonData
+		v := &struct {
+			Schema string `json:"schema"`
+			Table  string `json:"table"`
+			*Alias
+		}{
+			Alias: (*Alias)(w),
+		}
+		return json.Marshal(v)
+	}
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
 func (w *Wal2JsonData) UnmarshalJSON(data []byte) error {
 	type Alias Wal2JsonData
 	v := &struct {

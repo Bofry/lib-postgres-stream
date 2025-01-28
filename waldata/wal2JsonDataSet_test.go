@@ -169,3 +169,35 @@ func TestWal2JsonDataSet_Delete(t *testing.T) {
 		t.Errorf("expected: %+v, got: %+v", expected, data)
 	}
 }
+
+func TestWal2JsonDataSet_Message(t *testing.T) {
+	var input = []byte(`
+	{
+		"change": [
+			{
+				"kind"         : "message",
+				"transactional": false,
+				"prefix"       : "foo",
+				"content"      : "bar"
+			}
+		]
+	}`)
+	var data waldata.Wal2JsonDataSet
+
+	err := json.Unmarshal(input, &data)
+	if err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	expected := waldata.Wal2JsonDataSet{
+		waldata.Wal2JsonData{
+			Kind:          "message",
+			Transactional: false,
+			Prefix:        "foo",
+			Content:       "bar",
+		},
+	}
+	if !reflect.DeepEqual(expected, data) {
+		t.Errorf("expected: %+v, got: %+v", expected, data)
+	}
+}
