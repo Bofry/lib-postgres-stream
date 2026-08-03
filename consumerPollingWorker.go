@@ -32,7 +32,7 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 
 	for consumer.running {
 		if consumer.pausing {
-			ctx, _ := context.WithTimeout(context.Background(), timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 			err := consumer.doAck(w.lastFlushLSN)
 			if err != nil {
@@ -40,6 +40,7 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 			}
 
 			<-ctx.Done()
+			cancel()
 			continue
 		}
 

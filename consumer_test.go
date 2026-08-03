@@ -28,7 +28,8 @@ func TestConsumer(t *testing.T) {
 		},
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 13*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 13*time.Second)
+	defer cancel()
 
 	err := consumer.Subscribe(
 		postgres.SlotOffset{Slot: "golang_replication_slot_temp"},
