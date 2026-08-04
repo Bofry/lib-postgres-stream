@@ -30,8 +30,8 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 		deadline time.Time
 	)
 
-	for consumer.running {
-		if consumer.pausing {
+	for consumer.running.Load() {
+		if consumer.pausing.Load() {
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 			err := consumer.doAck(w.lastFlushLSN)
@@ -49,15 +49,18 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 		msg, err := consumer.read(deadline)
 		if err != nil {
 			// ignore any error if disposed or not running
-			if !consumer.running {
+			if !consumer.running.Load() {
 				break
 			}
 			if pgconn.Timeout(err) {
 				continue
 			}
 			if !w.processError(err) {
-				w.Logger.Fatalf("%% Error: %v\n", err)
-				continue
+				// the slots share a single connection, so an unhandled read
+				// error is terminal for this worker. Set an ErrorHandler to
+				// be notified programmatically.
+				w.Logger.Printf("%% Error: stopping worker on (%s): %v\n", w.Slot, err)
+				break
 			}
 		}
 
@@ -174,7 +177,7 @@ func (w *consumerPollingWorker) processEvent(event Event) {
 }
 
 func (w *consumerPollingWorker) processError(err error) (disposed bool) {
-	if w.EventHandler != nil {
+	if w.ErrorHandler != nil {
 		w.consumer.wg.Add(1)
 		defer w.consumer.wg.Done()
 

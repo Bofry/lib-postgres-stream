@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pglogrepl"
@@ -25,40 +26,57 @@ type Consumer struct {
 
 	mutex       sync.Mutex
 	initialized bool
-	running     bool
-	disposed    bool
-	pausing     bool
+	running     atomic.Bool
+	disposed    atomic.Bool
+	pausing     atomic.Bool
 }
 
-func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
-	if c.disposed {
+func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) (err error) {
+	c.mutex.Lock()
+
+	if c.disposed.Load() {
+		c.mutex.Unlock()
 		return fmt.Errorf("the Consumer has been disposed")
 	}
-	if c.running {
+	if c.running.Load() {
+		c.mutex.Unlock()
 		return fmt.Errorf("the Consumer is running")
 	}
 
-	var err error
-	c.mutex.Lock()
 	defer func() {
 		if err != nil {
-			c.running = false
-			c.disposed = true
+			c.running.Store(false)
+			c.disposed.Store(true)
 		}
 		c.mutex.Unlock()
+
+		// Close() short-circuits on disposed, so the connection has to be
+		// released here. Do it after the mutex is dropped: wg.Wait() blocks
+		// on in-flight message handlers, which run for an unbounded time and
+		// may themselves call Close(). Waiting for them under the lock would
+		// deadlock against Close()'s own mutex acquisition.
+		if err != nil {
+			c.wg.Wait()
+			if c.conn != nil {
+				// the connection is not safe for concurrent use, so this must
+				// follow wg.Wait() rather than run alongside live workers.
+				c.conn.Close(context.Background())
+			}
+		}
 	}()
+
 	c.init()
-	c.running = true
-	c.pausing = false
+	c.running.Store(true)
+	c.pausing.Store(false)
 
 	// new slots
 	c.slots = make(map[string]ReplicationSlotSource)
 
 	// new conn
 	{
-		conn, err := NewConn(c.Config)
-		if err != nil {
-			return err
+		conn, cerr := NewConn(c.Config)
+		if cerr != nil {
+			return cerr
 		}
 
 		c.conn = conn
@@ -68,30 +86,32 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 }
 
 func (c *Consumer) Close() {
-	if c.disposed {
+	if c.disposed.Load() {
 		return
 	}
 
 	c.mutex.Lock()
-	c.running = false
-
-	defer func() {
-		c.disposed = true
-		// dispose
+	if c.disposed.Load() {
 		c.mutex.Unlock()
-	}()
+		return
+	}
+	c.running.Store(false)
+	c.disposed.Store(true)
+	c.mutex.Unlock()
 
 	c.wg.Wait()
 
-	c.conn.Close(context.Background())
+	if c.conn != nil {
+		c.conn.Close(context.Background())
+	}
 }
 
 func (c *Consumer) Pause() {
-	c.pausing = true
+	c.pausing.Store(true)
 }
 
 func (c *Consumer) Resume() {
-	c.pausing = false
+	c.pausing.Store(false)
 }
 
 func (c *Consumer) init() {
@@ -111,10 +131,10 @@ func (c *Consumer) init() {
 }
 
 func (c *Consumer) doAck(xLogPos pglogrepl.LSN) error {
-	if c.disposed {
+	if c.disposed.Load() {
 		return nil
 	}
-	if !c.running {
+	if !c.running.Load() {
 		return nil
 	}
 
