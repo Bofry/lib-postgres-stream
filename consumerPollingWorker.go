@@ -56,7 +56,10 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 				continue
 			}
 			if !w.processError(err) {
-				w.Logger.Printf("%% Error: %v\n", err)
+				// the slots share a single connection, so an unhandled read
+				// error is terminal for this worker. Set an ErrorHandler to
+				// be notified programmatically.
+				w.Logger.Printf("%% Error: stopping worker on (%s): %v\n", w.Slot, err)
 				break
 			}
 		}

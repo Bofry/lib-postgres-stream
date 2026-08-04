@@ -33,12 +33,13 @@ type Consumer struct {
 
 func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) (err error) {
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
 
 	if c.disposed.Load() {
+		c.mutex.Unlock()
 		return fmt.Errorf("the Consumer has been disposed")
 	}
 	if c.running.Load() {
+		c.mutex.Unlock()
 		return fmt.Errorf("the Consumer is running")
 	}
 
@@ -46,12 +47,19 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) (err error) {
 		if err != nil {
 			c.running.Store(false)
 			c.disposed.Store(true)
+		}
+		c.mutex.Unlock()
 
-			// Close() short-circuits on disposed, so release the connection
-			// here. Wait for any workers started before the failure first,
-			// the connection is not safe for concurrent use.
+		// Close() short-circuits on disposed, so the connection has to be
+		// released here. Do it after the mutex is dropped: wg.Wait() blocks
+		// on in-flight message handlers, which run for an unbounded time and
+		// may themselves call Close(). Waiting for them under the lock would
+		// deadlock against Close()'s own mutex acquisition.
+		if err != nil {
 			c.wg.Wait()
 			if c.conn != nil {
+				// the connection is not safe for concurrent use, so this must
+				// follow wg.Wait() rather than run alongside live workers.
 				c.conn.Close(context.Background())
 			}
 		}
