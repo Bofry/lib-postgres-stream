@@ -30,8 +30,8 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 		deadline time.Time
 	)
 
-	for consumer.running {
-		if consumer.pausing {
+	for consumer.running.Load() {
+		if consumer.pausing.Load() {
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 			err := consumer.doAck(w.lastFlushLSN)
@@ -49,7 +49,7 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 		msg, err := consumer.read(deadline)
 		if err != nil {
 			// ignore any error if disposed or not running
-			if !consumer.running {
+			if !consumer.running.Load() {
 				break
 			}
 			if pgconn.Timeout(err) {
