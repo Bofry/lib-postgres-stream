@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pglogrepl"
@@ -25,16 +26,16 @@ type Consumer struct {
 
 	mutex       sync.Mutex
 	initialized bool
-	running     bool
-	disposed    bool
-	pausing     bool
+	running     atomic.Bool
+	disposed    atomic.Bool
+	pausing     atomic.Bool
 }
 
 func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
-	if c.disposed {
+	if c.disposed.Load() {
 		return fmt.Errorf("the Consumer has been disposed")
 	}
-	if c.running {
+	if c.running.Load() {
 		return fmt.Errorf("the Consumer is running")
 	}
 
@@ -42,14 +43,14 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 	c.mutex.Lock()
 	defer func() {
 		if err != nil {
-			c.running = false
-			c.disposed = true
+			c.running.Store(false)
+			c.disposed.Store(true)
 		}
 		c.mutex.Unlock()
 	}()
 	c.init()
-	c.running = true
-	c.pausing = false
+	c.running.Store(true)
+	c.pausing.Store(false)
 
 	// new slots
 	c.slots = make(map[string]ReplicationSlotSource)
@@ -68,30 +69,28 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 }
 
 func (c *Consumer) Close() {
-	if c.disposed {
+	if c.disposed.Load() {
 		return
 	}
 
 	c.mutex.Lock()
-	c.running = false
-
-	defer func() {
-		c.disposed = true
-		// dispose
-		c.mutex.Unlock()
-	}()
+	c.running.Store(false)
+	c.disposed.Store(true)
+	c.mutex.Unlock()
 
 	c.wg.Wait()
 
-	c.conn.Close(context.Background())
+	if c.conn != nil {
+		c.conn.Close(context.Background())
+	}
 }
 
 func (c *Consumer) Pause() {
-	c.pausing = true
+	c.pausing.Store(true)
 }
 
 func (c *Consumer) Resume() {
-	c.pausing = false
+	c.pausing.Store(false)
 }
 
 func (c *Consumer) init() {
@@ -111,10 +110,10 @@ func (c *Consumer) init() {
 }
 
 func (c *Consumer) doAck(xLogPos pglogrepl.LSN) error {
-	if c.disposed {
+	if c.disposed.Load() {
 		return nil
 	}
-	if !c.running {
+	if !c.running.Load() {
 		return nil
 	}
 
