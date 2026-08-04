@@ -31,7 +31,10 @@ type Consumer struct {
 	pausing     atomic.Bool
 }
 
-func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
+func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) (err error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
 	if c.disposed.Load() {
 		return fmt.Errorf("the Consumer has been disposed")
 	}
@@ -39,15 +42,21 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 		return fmt.Errorf("the Consumer is running")
 	}
 
-	var err error
-	c.mutex.Lock()
 	defer func() {
 		if err != nil {
 			c.running.Store(false)
 			c.disposed.Store(true)
+
+			// Close() short-circuits on disposed, so release the connection
+			// here. Wait for any workers started before the failure first,
+			// the connection is not safe for concurrent use.
+			c.wg.Wait()
+			if c.conn != nil {
+				c.conn.Close(context.Background())
+			}
 		}
-		c.mutex.Unlock()
 	}()
+
 	c.init()
 	c.running.Store(true)
 	c.pausing.Store(false)
@@ -57,9 +66,9 @@ func (c *Consumer) Subscribe(slots ...SlotOffsetInfo) error {
 
 	// new conn
 	{
-		conn, err := NewConn(c.Config)
-		if err != nil {
-			return err
+		conn, cerr := NewConn(c.Config)
+		if cerr != nil {
+			return cerr
 		}
 
 		c.conn = conn
@@ -74,6 +83,10 @@ func (c *Consumer) Close() {
 	}
 
 	c.mutex.Lock()
+	if c.disposed.Load() {
+		c.mutex.Unlock()
+		return
+	}
 	c.running.Store(false)
 	c.disposed.Store(true)
 	c.mutex.Unlock()

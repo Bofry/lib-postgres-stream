@@ -56,8 +56,8 @@ func (w *consumerPollingWorker) run(timeout time.Duration) {
 				continue
 			}
 			if !w.processError(err) {
-				w.Logger.Fatalf("%% Error: %v\n", err)
-				continue
+				w.Logger.Printf("%% Error: %v\n", err)
+				break
 			}
 		}
 
@@ -174,7 +174,7 @@ func (w *consumerPollingWorker) processEvent(event Event) {
 }
 
 func (w *consumerPollingWorker) processError(err error) (disposed bool) {
-	if w.EventHandler != nil {
+	if w.ErrorHandler != nil {
 		w.consumer.wg.Add(1)
 		defer w.consumer.wg.Done()
 
