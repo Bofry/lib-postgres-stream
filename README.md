@@ -12,6 +12,8 @@
 
 ## Installation
 
+Requires Go 1.26 or later, as required by OpenTelemetry 1.47.
+
 ```bash
 go get github.com/Bofry/lib-postgres-stream
 ```
